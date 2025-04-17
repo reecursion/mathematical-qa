@@ -7,12 +7,14 @@ import re
 import argparse
 from tqdm import tqdm
 from typing import List, Dict, Tuple, Any, Optional
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import os
+from huggingface_hub import login
+
 
 
 class MathProcessor:
-    def __init__(self, dataset_name: str = "reecursion/mmiqc-subset", debug=False):
+    def __init__(self, dataset_name: str = "Rith335/MATH_filtered_math_equation_problems", debug=True):
         self.dataset_name = dataset_name
         self.dataset = None
         self.processed_dataset = None
@@ -81,7 +83,7 @@ class MathProcessor:
 
 
 class CustomizedFlanT5Inference:
-    def __init__(self, model_name="google/flan-t5-base", device=None, debug=False):
+    def __init__(self, model_name="google/flan-t5-base", device=None, debug=True):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.debug = debug
         print(f"Using device: {self.device}")
@@ -232,7 +234,8 @@ class CustomizedFlanT5Inference:
         # First pass: Pattern-based detection
         for token_id, token_str in zip(tokens, token_strs):
             has_number = bool(num_pattern.search(token_str))
-            has_operator = bool(op_pattern.search(token_str))
+            if '<unk>' not in token_str:
+                has_operator = bool(op_pattern.search(token_str))
             
             classification = {"token_id": token_id, "token_str": token_str, "classification": "unmodified", "reason": "", "scaling": None}
             
@@ -416,7 +419,7 @@ class CustomizedFlanT5Inference:
         else:
             return min(0.7, max(0.4, words / (numbers * 10 + 1)))
 
-    def process_dataset(self, dataset_name="reecursion/mmiqc-subset", split="test"):
+    def process_dataset(self, dataset_name="Rith335/MATH_filtered_math_equation_problems", split="test"):
         processor = MathProcessor(dataset_name, debug=self.debug)
         processed_dataset = processor.process_dataset()
         df = pd.DataFrame({
