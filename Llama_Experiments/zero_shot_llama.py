@@ -300,11 +300,17 @@ def main():
                 print(f"Warning: Could not extract prediction for example {idx}")
                 # continue
             
+            extract_ground_truth = extract_answer(ground_truth)
+            if not predicted_answer:
+                print(f"Warning: Could not extract prediction for example {idx}")
+                # continue
+
             # Store results
             results.append({
                 "idx": idx,
                 "question": instruction,
-                "ground_truth": ground_truth,
+                "ground_truth_full": ground_truth,
+                "ground_truth": extract_ground_truth,
                 "prompt": modified_instruction,
                 "predicted": predicted_answer,
                 'ground_truth': output,

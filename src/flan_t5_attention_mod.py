@@ -83,19 +83,21 @@ class MathProcessor:
 
 
 class CustomizedFlanT5Inference:
-    def __init__(self, model_name="google/flan-t5-base", device=None, debug=True):
+    def __init__(self, model_name="google/flan-t5-base", prompt = "", device=None, debug=True):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.debug = debug
         print(f"Using device: {self.device}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name,)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, device_map='auto')
         if self.debug:
             print("Model and tokenizer loaded.")
         self.original_state_dict = {
             k: v.clone() for k, v in self.model.state_dict().items()
             if 'encoder' in k and 'attention' in k and 'relative_attention_bias' not in k
         }
+        self.prompt = prompt
         if self.debug:
+            print(f"Prompt being used is {self.prompt}")
             print(f"Original attention weights snapshot stored: {len(self.original_state_dict)} tensors.")
         
         # Prepare word lists for word-based detection
@@ -424,12 +426,15 @@ class CustomizedFlanT5Inference:
         processed_dataset = processor.process_dataset()
         df = pd.DataFrame({
             "question": processed_dataset[split]["clean_instruction"],
+            "ground_truth_full": processed_dataset[split]["output"],
             "answer": processed_dataset[split]["final_answer"]
         })
         return df
 
     def prepare_prompt(self, question):
-        return f"Please solve the following problem and only output the answer at the end with \"The answer is: \".{question}"
+
+        # return f"Please solve the following problem and only output the answer at the end with \"The answer is: \".{question}"
+        return f"{self.prompt}{question}"
 
     def extract_final_answer(self, text):
         return text.strip()
@@ -479,7 +484,7 @@ class CustomizedFlanT5Inference:
                         output = self.model.generate(
                             input_ids=single_input.input_ids,
                             attention_mask=single_input.attention_mask,
-                            max_length=150,
+                            max_length=512,
                             num_beams=4,
                             early_stopping=True
                         )
@@ -494,10 +499,12 @@ class CustomizedFlanT5Inference:
                     
                     batch_results.append({
                         "idx": idx,
+                        "question": row["question"], 
                         "prompt": prompts[j],
+                        "ground_truth_full": row["ground_truth_full"],
                         "ground_truth": row["answer"],
-                        "predicted": final_answer,
                         "model_response": prediction,
+                        "predicted": final_answer,
                         "question_type": question_type
                     })
                     
@@ -539,9 +546,11 @@ class CustomizedFlanT5Inference:
                     question_type = "word_problem" if self.analyze_question_type(row["question"]) > 0.6 else "equation"
                     results.append({
                         "idx": idx,
+                        "question": row["question"], 
                         "prompt": prompts[j],
-                        "model_response": predictions[j],
+                        "ground_truth_full": row["ground_truth_full"],
                         "ground_truth": row["answer"],
+                        "model_response": predictions[j],
                         "predicted": final_answers[j],
                         "question_type": question_type
                     })
@@ -608,11 +617,12 @@ def main():
     parser.add_argument("--num_scaling", type=float, default=1.5, help="Number token scaling")
     parser.add_argument("--op_scaling", type=float, default=2.0, help="Operator token scaling")
     parser.add_argument("--debug", action="store_true", help="Enable debug/verbose output")
+    parser.add_argument("--modification", type=str, default="Please solve the following problem and only output the answer at the end with \"The answer is: \". ", help="Modifications to the prompt")
     args = parser.parse_args()
 
     flag = None if args.flag == "none" else args.flag
 
-    inference = CustomizedFlanT5Inference(model_name=args.model, debug=args.debug)
+    inference = CustomizedFlanT5Inference(model_name=args.model, debug=args.debug, prompt=args.modification)
     df = inference.process_dataset()
     results = inference.run_inference(
         df,
@@ -626,3 +636,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python src/flan_t5_attention_mod.py --model google/flan-t5-xxl --output results/attention_experiments-equations/without/xxl/inference_baseline.csv --flag none --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". "
+
+# python src/flan_t5_attention_mod.py --model google/flan-t5-xl --output results/attention_experiments-equations/without/xl/inference_both.csv --flag both --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". "
