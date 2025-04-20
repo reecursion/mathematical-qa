@@ -140,7 +140,10 @@ class CustomizedFlanT5Inference:
             "percent", "percentage", "ratio", "proportion", "fraction", "decimal",
             "greater", "less", "than", "same", "different", "increase", "decrease",
             "square", "cube", "root", "power", "exponent", "logarithm", "factorial",
-            "sine", "cosine", "tangent", "derivative", "integral", "limit", "amount", "many", "frac", "\\frac",
+            "sine", "cosine", "tangent", "derivative", "integral", "limit", "amount", "many", "frac", "\\frac", 
+            "\frac", "\\sqrt", "sqrt",  "\\sum", "\\prod", "\\int", "\\lim", "\\sin", "\\cos", "\\tan", "\\log", "\\ln",
+            "\\cdot", "\\times", "\\div", "\\leq", "\\geq", "\\neq", "\\approx", "\\mod",
+            "\\over", "\\binom"
         ]
         
         self.operation_word_stems = set(operation_words)
@@ -407,7 +410,13 @@ class CustomizedFlanT5Inference:
         return f"{self.prompt}{question}"
 
     def extract_final_answer(self, text):
-        return text.strip()
+        final_answer = ""
+        lines = answer.split('\n')
+        for line in reversed(lines):
+            if "The answer is:" in line:
+                final_answer = line.split("The answer is:")[-1].strip()
+                break
+        return final_answer
 
     def run_inference(self, df, batch_size=8, num_scaling=1.5, op_scaling=2.0, model_part="both"):
         """
