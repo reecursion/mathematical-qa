@@ -12,7 +12,6 @@ import os
 from huggingface_hub import login
 
 
-
 class MathProcessor:
     def __init__(self, dataset_name: str = "Rith335/MATH_filtered_math_equation_problems", debug=True):
         self.dataset_name = dataset_name
@@ -83,7 +82,7 @@ class MathProcessor:
 
 
 class CustomizedFlanT5Inference:
-    def __init__(self, model_name="google/flan-t5-base", prompt = "", device=None, debug=True):
+    def __init__(self, model_name="google/flan-t5-base", prompt="", device=None, debug=True):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.debug = debug
         print(f"Using device: {self.device}")
@@ -91,14 +90,20 @@ class CustomizedFlanT5Inference:
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, device_map='auto')
         if self.debug:
             print("Model and tokenizer loaded.")
+        
+        # Store original weights for both encoder and decoder
         self.original_state_dict = {
             k: v.clone() for k, v in self.model.state_dict().items()
-            if 'encoder' in k and 'attention' in k and 'relative_attention_bias' not in k
+            if ('encoder' in k or 'decoder' in k) and 'attention' in k and 'relative_attention_bias' not in k
         }
+        
         self.prompt = prompt
         if self.debug:
             print(f"Prompt being used is {self.prompt}")
-            print(f"Original attention weights snapshot stored: {len(self.original_state_dict)} tensors.")
+            encoder_weights = sum(1 for k in self.original_state_dict if 'encoder' in k)
+            decoder_weights = sum(1 for k in self.original_state_dict if 'decoder' in k)
+            print(f"Original attention weights snapshot stored: {len(self.original_state_dict)} tensors "
+                  f"({encoder_weights} encoder, {decoder_weights} decoder).")
         
         # Prepare word lists for word-based detection
         self._prepare_math_word_lists()
@@ -135,7 +140,7 @@ class CustomizedFlanT5Inference:
             "percent", "percentage", "ratio", "proportion", "fraction", "decimal",
             "greater", "less", "than", "same", "different", "increase", "decrease",
             "square", "cube", "root", "power", "exponent", "logarithm", "factorial",
-            "sine", "cosine", "tangent", "derivative", "integral", "limit", "amount", "many"
+            "sine", "cosine", "tangent", "derivative", "integral", "limit", "amount", "many", "frac", "\\frac",
         ]
         
         self.operation_word_stems = set(operation_words)
@@ -208,14 +213,20 @@ class CustomizedFlanT5Inference:
                 token_strs = self.tokenizer.convert_ids_to_tokens(tokens)
                 print(f"  '{sample}' → {tokens} → {token_strs}")
 
-    def modify_attention_for_question(self, question, num_scaling=1.5, op_scaling=2.0):
+    def modify_attention(self, question=None, num_scaling=1.5, op_scaling=2.0, model_part="both"):
         """
-        Combined approach: Analyze the tokenization of a question and modify attention weights
-        using both pattern matching and word-based detection.
+        Unified approach to modify attention weights based on question content.
+        
+        Args:
+            question (str, optional): The question text to analyze for mathematical tokens
+            num_scaling (float): Scaling factor for number tokens
+            op_scaling (float): Scaling factor for operator tokens
+            model_part (str): Which part of the model to modify ("encoder", "decoder", or "both")
         """
+        # Always reset weights before any modification
         self.reset_weights()
         
-        # Skip if no question is provided
+        # If no question provided, no modifications needed
         if not question:
             return
         
@@ -231,15 +242,20 @@ class CustomizedFlanT5Inference:
         number_tokens = []
         operator_tokens = []
         mixed_tokens = []
-        token_classifications = []  # Store classification details for each token
+        token_classifications = []  # For debugging
         
         # First pass: Pattern-based detection
         for token_id, token_str in zip(tokens, token_strs):
             has_number = bool(num_pattern.search(token_str))
-            if '<unk>' not in token_str:
-                has_operator = bool(op_pattern.search(token_str))
+            has_operator = bool(op_pattern.search(token_str)) if '<unk>' not in token_str else False
             
-            classification = {"token_id": token_id, "token_str": token_str, "classification": "unmodified", "reason": "", "scaling": None}
+            classification = {
+                "token_id": token_id, 
+                "token_str": token_str, 
+                "classification": "unmodified", 
+                "reason": "", 
+                "scaling": None
+            }
             
             if has_number and has_operator:
                 mixed_tokens.append(token_id)
@@ -291,7 +307,17 @@ class CustomizedFlanT5Inference:
         modified_token_count = 0
         with torch.no_grad():
             for name, param in self.model.named_parameters():
-                if 'encoder' in name and 'SelfAttention' in name and 'relative_attention_bias' not in name:
+                # Check if we should modify this parameter based on model_part
+                should_modify = False
+                
+                if model_part == "encoder" and 'encoder' in name:
+                    should_modify = True
+                elif model_part == "decoder" and 'decoder' in name:
+                    should_modify = True
+                elif model_part == "both" and ('encoder' in name or 'decoder' in name):
+                    should_modify = True
+                
+                if should_modify and 'SelfAttention' in name and 'relative_attention_bias' not in name:
                     if 'q.weight' in name or 'k.weight' in name:
                         modified_param = param.clone()
                         
@@ -320,6 +346,7 @@ class CustomizedFlanT5Inference:
             print(f"\n{'='*80}")
             print(f"Question: '{question}'")
             print(f"Tokenization: {token_strs}")
+            print(f"Model part being modified: {model_part}")
             print(f"\nDetailed Token Analysis:")
             print(f"{'Token ID':<10} {'Token':<15} {'Classification':<15} {'Scaling':<10} {'Reason'}")
             print(f"{'-'*70}")
@@ -340,61 +367,6 @@ class CustomizedFlanT5Inference:
             print(f"- Unmodified tokens: {len(tokens) - len(number_tokens) - len(operator_tokens) - len(mixed_tokens)}")
             print(f"- Total modified tokens: {modified_token_count}")
             print(f"{'='*80}")
-
-    def modify_attention_for_type(self, flag, num_scaling=1.5, op_scaling=2.0, question=None):
-        """
-        Support for the legacy flag-based approach while offering question-specific analysis
-        """
-        self.reset_weights()
-        
-        if flag is None:
-            return
-            
-        if question is not None and (flag == "both" or self.debug):
-            # Use the more sophisticated question-specific approach when possible
-            current_num_scaling = num_scaling if flag in ["numbers", "both"] else 1.0
-            current_op_scaling = op_scaling if flag in ["operators", "both"] else 1.0
-            
-            # Adjust scaling based on question type
-            word_prob_score = self.analyze_question_type(question)
-            if word_prob_score < 0.4:  # More like an equation
-                current_num_scaling = current_num_scaling * 0.9
-                current_op_scaling = current_op_scaling * 1.2
-            elif word_prob_score > 0.7:  # More like a word problem
-                current_num_scaling = current_num_scaling * 1.2
-                current_op_scaling = current_op_scaling * 1.1
-                
-            if self.debug:
-                print(f"[ADAPTIVE SCALING] Score: {word_prob_score:.2f} → Num: {current_num_scaling:.2f}, Op: {current_op_scaling:.2f}")
-                
-            # Use the question-specific attention modification
-            self.modify_attention_for_question(question, current_num_scaling, current_op_scaling)
-            return
-        
-        # Otherwise, fallback to the original approach
-        with torch.no_grad():
-            for name, param in self.model.named_parameters():
-                if 'encoder' in name and 'SelfAttention' in name and 'relative_attention_bias' not in name:
-                    if 'q.weight' in name or 'k.weight' in name:
-                        modified_param = param.clone()
-                    
-                        # Apply scaling to both individual tokens and consider token sequences
-                        if flag in ["numbers", "both"]:
-                            # Scale individual number tokens
-                            for token_id in self.number_tokens:
-                                if token_id < param.size(1):
-                                    modified_param[:, token_id] *= num_scaling
-                        
-                        if flag in ["operators", "both"]:
-                            # Scale individual operator tokens
-                            for token_id in self.operator_tokens:
-                                if token_id < param.size(1):
-                                    modified_param[:, token_id] *= op_scaling
-                        
-                        param.copy_(modified_param)
-            
-            if self.debug:
-                print(f"Attention weights modified for flag: {flag}")
 
     def reset_weights(self):
         with torch.no_grad():
@@ -432,140 +404,81 @@ class CustomizedFlanT5Inference:
         return df
 
     def prepare_prompt(self, question):
-
-        # return f"Please solve the following problem and only output the answer at the end with \"The answer is: \".{question}"
         return f"{self.prompt}{question}"
 
     def extract_final_answer(self, text):
         return text.strip()
 
-    def run_inference(self, df, batch_size=8, flag=None, num_scaling=1.5, op_scaling=2.0):
+    def run_inference(self, df, batch_size=8, num_scaling=1.5, op_scaling=2.0, model_part="both"):
         """
-        Modified inference function that uses both approaches:
-        - Traditional flag-based approach for batch processing
-        - Token-analysis approach for question-by-question processing
+        Run inference on a dataset with the option to modify attention weights.
         """
         results = []
         if self.debug:
-            print(f"Running inference with flag: {flag}, num_scaling: {num_scaling}, op_scaling: {op_scaling}")
+            print(f"Running inference with num_scaling: {num_scaling}, op_scaling: {op_scaling}, model_part: {model_part}")
         
-        # Use question-specific approach if flag is "both"
-        if flag == "both":
-            print("Adaptive scaling will be applied for each question.")
-            total_examples = len(df)
+        total_examples = len(df)
+        
+        for i in tqdm(range(0, total_examples, batch_size)):
+            batch = df.iloc[i:i+batch_size]
+            prompts = [self.prepare_prompt(q) for q in batch["question"]]
+            batch_results = []
             
-            for i in tqdm(range(0, total_examples, batch_size)):
-                batch = df.iloc[i:i+batch_size]
-                prompts = [self.prepare_prompt(q) for q in batch["question"]]
-                batch_results = []
-                
+            if self.debug:
+                print(f"\nProcessing batch {i//batch_size + 1}/{(total_examples+batch_size-1)//batch_size}")
+            
+            for j, (idx, row) in enumerate(batch.iterrows()):
+                question = row["question"]
                 if self.debug:
-                    print(f"\nProcessing batch {i//batch_size + 1}/{(total_examples+batch_size-1)//batch_size}")
+                    print(f"\nProcessing question {idx} ({j+1}/{len(batch)}):")
+                    print(f"QUESTION: {question}")
                 
-                for j, (idx, row) in enumerate(batch.iterrows()):
-                    question = row["question"]
-                    if self.debug:
-                        print(f"\nProcessing question {idx} ({j+1}/{len(batch)}):")
-                        print(f"QUESTION: {question}")
-                    
-                    # Determine question type before modifying attention
-                    question_type = "word_problem" if self.analyze_question_type(question) > 0.6 else "equation"
-                    
-                    # Use our new question-specific analysis
-                    self.modify_attention_for_question(
-                        question=question,
-                        num_scaling=num_scaling,
-                        op_scaling=op_scaling
-                    )
-                    
-                    # Generate answer
-                    single_input = self.tokenizer([prompts[j]], return_tensors="pt", padding=True, truncation=True).to(self.device)
-                    with torch.no_grad():
-                        output = self.model.generate(
-                            input_ids=single_input.input_ids,
-                            attention_mask=single_input.attention_mask,
-                            max_length=512,
-                            num_beams=4,
-                            early_stopping=True
-                        )
-                    prediction = self.tokenizer.decode(output[0], skip_special_tokens=True)
-                    final_answer = self.extract_final_answer(prediction)
-                    
-                    if self.debug:
-                        print(f"Question type: {question_type}")
-                        print(f"Ground truth: {row['answer']}")
-                        print(f"Predicted: {final_answer}")
-                        print(f"Correct: {row['answer'].strip().lower() == final_answer.strip().lower()}")
-                    
-                    batch_results.append({
-                        "idx": idx,
-                        "question": row["question"], 
-                        "prompt": prompts[j],
-                        "ground_truth_full": row["ground_truth_full"],
-                        "ground_truth": row["answer"],
-                        "model_response": prediction,
-                        "predicted": final_answer,
-                        "question_type": question_type
-                    })
-                    
-                    # Reset weights for next question
-                    self.reset_weights()
+                # Determine question type before modifying attention
+                question_type = "word_problem" if self.analyze_question_type(question) > 0.6 else "equation"
                 
-                results.extend(batch_results)
-        else:
-            # Use traditional approach for other flags
-            if flag == "numbers":
-                self.modify_attention_for_type("numbers", num_scaling=num_scaling)
-                if self.debug:
-                    print(f"Applied 'numbers' scaling with factor {num_scaling}")
-            elif flag == "operators":
-                self.modify_attention_for_type("operators", op_scaling=op_scaling)
-                if self.debug:
-                    print(f"Applied 'operators' scaling with factor {op_scaling}")
+                # Use our unified attention modification function
+                self.modify_attention(
+                    question=question,
+                    num_scaling=num_scaling,
+                    op_scaling=op_scaling,
+                    model_part=model_part
+                )
                 
-            for i in tqdm(range(0, len(df), batch_size)):
-                batch = df.iloc[i:i+batch_size]
-                prompts = [self.prepare_prompt(q) for q in batch["question"]]
-                
-                if self.debug and i == 0:
-                    print(f"\nProcessing first batch of {len(batch)} questions with batch approach...")
-                
-                inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to(self.device)
+                # Generate answer
+                single_input = self.tokenizer([prompts[j]], return_tensors="pt", padding=True, truncation=True).to(self.device)
                 with torch.no_grad():
-                    outputs = self.model.generate(
-                        input_ids=inputs.input_ids,
-                        attention_mask=inputs.attention_mask,
-                        max_length=150,
+                    output = self.model.generate(
+                        input_ids=single_input.input_ids,
+                        attention_mask=single_input.attention_mask,
+                        max_length=512,
                         num_beams=4,
                         early_stopping=True
                     )
-                predictions = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-                final_answers = [self.extract_final_answer(pred) for pred in predictions]
+                prediction = self.tokenizer.decode(output[0], skip_special_tokens=True)
+                final_answer = self.extract_final_answer(prediction)
                 
-                for j, (idx, row) in enumerate(batch.iterrows()):
-                    question_type = "word_problem" if self.analyze_question_type(row["question"]) > 0.6 else "equation"
-                    results.append({
-                        "idx": idx,
-                        "question": row["question"], 
-                        "prompt": prompts[j],
-                        "ground_truth_full": row["ground_truth_full"],
-                        "ground_truth": row["answer"],
-                        "model_response": predictions[j],
-                        "predicted": final_answers[j],
-                        "question_type": question_type
-                    })
-                    
-                    if self.debug and i == 0 and j < 3:  # Show debug for first few examples
-                        print(f"\nSample {j+1}:")
-                        print(f"Question: {row['question'][:100]}...")
-                        print(f"Type: {question_type}")
-                        print(f"Ground truth: {row['answer']}")
-                        print(f"Predicted: {final_answers[j]}")
-                        print(f"Correct: {row['answer'].strip().lower() == final_answers[j].strip().lower()}")
+                if self.debug:
+                    print(f"Question type: {question_type}")
+                    print(f"Ground truth: {row['answer']}")
+                    print(f"Predicted: {final_answer}")
+                    print(f"Correct: {row['answer'].strip().lower() == final_answer.strip().lower()}")
+                
+                batch_results.append({
+                    "idx": idx,
+                    "question": row["question"], 
+                    "prompt": prompts[j],
+                    "ground_truth_full": row["ground_truth_full"],
+                    "ground_truth": row["answer"],
+                    "model_response": prediction,
+                    "predicted": final_answer,
+                    "question_type": question_type
+                })
+                
+                # Reset weights for next question
+                self.reset_weights()
             
-            # Reset weights after batch processing
-            self.reset_weights()
-            
+            results.extend(batch_results)
+        
         return pd.DataFrame(results)
 
     def save_results(self, results_df, output_path="inference_results.csv"):
@@ -613,23 +526,22 @@ def main():
     parser.add_argument("--model", type=str, default="google/flan-t5-base", help="Model name or path")
     parser.add_argument("--output", type=str, default="results/attention_experiments/inference_results.csv", help="Output CSV path")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
-    parser.add_argument("--flag", type=str, choices=["none", "numbers", "operators", "both"], default="none", help="Modification flag")
     parser.add_argument("--num_scaling", type=float, default=1.5, help="Number token scaling")
     parser.add_argument("--op_scaling", type=float, default=2.0, help="Operator token scaling")
+    parser.add_argument("--model_part", type=str, choices=["encoder", "decoder", "both"], default="both", 
+                        help="Which part of the model to apply attention modifications to")
     parser.add_argument("--debug", action="store_true", help="Enable debug/verbose output")
     parser.add_argument("--modification", type=str, default="Please solve the following problem and only output the answer at the end with \"The answer is: \". ", help="Modifications to the prompt")
     args = parser.parse_args()
-
-    flag = None if args.flag == "none" else args.flag
 
     inference = CustomizedFlanT5Inference(model_name=args.model, debug=args.debug, prompt=args.modification)
     df = inference.process_dataset()
     results = inference.run_inference(
         df,
         batch_size=args.batch_size,
-        flag=flag,
         num_scaling=args.num_scaling,
-        op_scaling=args.op_scaling
+        op_scaling=args.op_scaling,
+        model_part=args.model_part
     )
     inference.save_results(results, output_path=args.output)
 
@@ -637,6 +549,15 @@ def main():
 if __name__ == "__main__":
     main()
 
-# python src/flan_t5_attention_mod.py --model google/flan-t5-xxl --output results/attention_experiments-equations/without/xxl/inference_baseline.csv --flag none --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". "
+# Example usage commands:
+# Basic (no attention modification):
+# python src/flan_t5_attention_mod.py --model google/flan-t5-xxl --output results/attention_experiments-equations/without/xxl/inference_baseline.csv --num_scaling 1.0 --op_scaling 1.0 --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". "
 
-# python src/flan_t5_attention_mod.py --model google/flan-t5-xl --output results/attention_experiments-equations/without/xl/inference_both.csv --flag both --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". "
+# With number and operator attention modification (both encoder and decoder):
+# python src/flan_t5_attention_mod.py --model google/flan-t5-xl --output results/attention_experiments-equations/without/xl/inference_both.csv --num_scaling 1.5 --op_scaling 2.0 --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". " --model_part both
+
+# Only modify encoder attention:
+# python src/flan_t5_attention_mod.py --model google/flan-t5-xl --output results/attention_experiments-equations/encoder_only/xl/inference_both.csv --num_scaling 1.5 --op_scaling 2.0 --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". " --model_part encoder
+
+# Only modify decoder attention:
+# python src/flan_t5_attention_mod.py --model google/flan-t5-xl --output results/attention_experiments-equations/decoder_only/xl/inference_both.csv --num_scaling 1.5 --op_scaling 2.0 --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". " --model_part decoder
