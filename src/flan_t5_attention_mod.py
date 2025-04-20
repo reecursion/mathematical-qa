@@ -143,7 +143,7 @@ class CustomizedFlanT5Inference:
             "sine", "cosine", "tangent", "derivative", "integral", "limit", "amount", "many", "frac", "\\frac", 
             "\frac", "\\sqrt", "sqrt",  "\\sum", "\\prod", "\\int", "\\lim", "\\sin", "\\cos", "\\tan", "\\log", "\\ln",
             "\\cdot", "\\times", "\\div", "\\leq", "\\geq", "\\neq", "\\approx", "\\mod",
-            "\\over", "\\binom", "sum", "prod", "int", "lim", "sin", "cos", "tan", "log", "ln",
+            "\\over", "\\binom", "prod", "int", "lim", "sin", "cos", "tan", "log", "ln",
             "cdot", "times", "div", "leq", "geq", "neq", "approx", "mod", "over", "binom"
         ]
         
