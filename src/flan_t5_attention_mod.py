@@ -411,13 +411,10 @@ class CustomizedFlanT5Inference:
         return f"{self.prompt}{question}"
 
     def extract_final_answer(self, text):
-        final_answer = ""
-        lines = answer.split('\n')
-        for line in reversed(lines):
-            if "The answer is:" in line:
-                final_answer = line.split("The answer is:")[-1].strip()
-                break
-        return final_answer
+        match = re.search(r"The answer is:\s*(.*)", text)
+        if match:
+            return match.group(1).strip()
+        return ""
 
     def run_inference(self, df, batch_size=8, num_scaling=1.5, op_scaling=2.0, model_part="both"):
         """
