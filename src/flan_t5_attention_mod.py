@@ -13,7 +13,7 @@ from huggingface_hub import login
 
 
 class MathProcessor:
-    def __init__(self, dataset_name: str = "Rith335/MATH_filtered_math_equation_problems", debug=True):
+    def __init__(self, dataset_name: str = "reecursion/mmiqc-subset", debug=True):
         self.dataset_name = dataset_name
         self.dataset = None
         self.processed_dataset = None
@@ -397,7 +397,7 @@ class CustomizedFlanT5Inference:
         else:
             return min(0.7, max(0.4, words / (numbers * 10 + 1)))
 
-    def process_dataset(self, dataset_name="Rith335/MATH_filtered_math_equation_problems", split="test"):
+    def process_dataset(self, dataset_name="reecursion/mmiqc-subset", split="test"):
         processor = MathProcessor(dataset_name, debug=self.debug)
         processed_dataset = processor.process_dataset()
         df = pd.DataFrame({
