@@ -570,3 +570,5 @@ if __name__ == "__main__":
 
 # Only modify decoder attention:
 # python src/flan_t5_attention_mod.py --model google/flan-t5-xl --output results/attention_experiments-equations/decoder_only/xl/inference_both.csv --num_scaling 1.5 --op_scaling 2.0 --modification "Please solve the following problem and only output the answer at the end with \"The answer is: \". " --model_part decoder
+
+
