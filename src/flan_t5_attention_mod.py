@@ -87,7 +87,7 @@ class CustomizedFlanT5Inference:
         self.debug = debug
         print(f"Using device: {self.device}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name,)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, device_map='auto')
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="cuda")
         if self.debug:
             print("Model and tokenizer loaded.")
         
@@ -540,6 +540,8 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug/verbose output")
     parser.add_argument("--modification", type=str, default="Please solve the following problem and only output the answer at the end with \"The answer is: \". ", help="Modifications to the prompt")
     args = parser.parse_args()
+
+    torch.cuda.empty_cache()
 
     inference = CustomizedFlanT5Inference(model_name=args.model, debug=args.debug, prompt=args.modification)
     df = inference.process_dataset()
