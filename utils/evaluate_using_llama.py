@@ -100,4 +100,6 @@ class BatchMathEvaluator:
 if __name__ == "__main__":
     evaluator = MathAnswerEvaluator()
     batch_evaluator = BatchMathEvaluator(evaluator)
+    parser = argparse.ArgumentParser(description="Run customized Flan-T5 inference on MMIQC dataset")
+    parser.add_argument("--file", type=str, default="", help="Enter the file name")
     batch_evaluator.evaluate_csv("inference_baseline.csv", "evaluated_results.csv")
