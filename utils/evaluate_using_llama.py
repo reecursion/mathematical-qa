@@ -97,7 +97,18 @@ class BatchMathEvaluator:
         df.to_csv(output_path, index=False)
         print(f"✅ Results saved to {output_path}")
 
+        # Score calculation
+        df["final_evaluation"] = df["final_evaluation"].str.lower()
+        yes_count = (df["final_evaluation"] == "yes").sum()
+        no_count = (df["final_evaluation"] == "no").sum()
+        score = yes_count / (yes_count + no_count) if (yes_count + no_count) > 0 else 0
+
+        print(f"✅ Evaluation Score (yes / (yes + no)): {score:.2f}")
+
 if __name__ == "__main__":
     evaluator = MathAnswerEvaluator()
     batch_evaluator = BatchMathEvaluator(evaluator)
-    batch_evaluator.evaluate_csv("inference_baseline.csv", "evaluated_results.csv")
+    parser = argparse.ArgumentParser(description="Run customized Flan-T5 inference on MMIQC dataset")
+    parser.add_argument("--file", type=str, default="", help="Enter the input file name")
+
+    batch_evaluator.evaluate_csv(args.file, args.file+"_evaluated")
