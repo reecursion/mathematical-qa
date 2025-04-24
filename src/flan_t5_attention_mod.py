@@ -86,7 +86,7 @@ class CustomizedFlanT5Inference:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.debug = debug
         print(f"Using device: {self.device}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name,)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name,device_map="cuda")
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="cuda")
         if self.debug:
             print("Model and tokenizer loaded.")
@@ -459,7 +459,7 @@ class CustomizedFlanT5Inference:
                         attention_mask=single_input.attention_mask,
                         max_length=512,
                         num_beams=4,
-                        early_stopping=True
+                        early_stopping=True,
                     )
                 prediction = self.tokenizer.decode(output[0], skip_special_tokens=True)
                 final_answer = self.extract_final_answer(prediction)
