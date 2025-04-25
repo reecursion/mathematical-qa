@@ -96,7 +96,7 @@ class BatchMathEvaluator:
 
     def evaluate_csv(self, input_path: str, output_path: str, batch_size: int = 8):
         df = pd.read_csv(input_path)
-        df = df.head(10)
+        # df = df.head(10)
         print(f"Evaluating {len(df)} examples...")
 
         evaluation_explanations = []
