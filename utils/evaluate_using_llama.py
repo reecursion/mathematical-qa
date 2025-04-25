@@ -144,4 +144,4 @@ if __name__ == "__main__":
     evaluator = MathAnswerEvaluator(use_babel=args.babel, use_explanation=args.exp)
     batch_evaluator = BatchMathEvaluator(evaluator)
 
-    batch_evaluator.evaluate_csv(args.file, args.file + "_evaluated")
+    batch_evaluator.evaluate_csv(args.file, args.file + "_evaluated.csv")
