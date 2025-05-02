@@ -7,7 +7,6 @@ import re
 import argparse
 from tqdm import tqdm
 from typing import List, Dict, Tuple, Any, Optional
-# import matplotlib.pyplot as plt
 import os
 from huggingface_hub import login
 
@@ -94,7 +93,6 @@ class CustomizedFlanT5Inference:
         # Store original weights for both encoder and decoder
         self.original_state_dict = {
             k: v.clone() for k, v in self.model.state_dict().items()
-            if ('encoder' in k or 'decoder' in k) and 'attention' in k and 'relative_attention_bias' not in k
         }
         
         self.prompt = prompt
@@ -460,6 +458,7 @@ class CustomizedFlanT5Inference:
                         max_length=512,
                         num_beams=4,
                         early_stopping=True,
+                        past_key_values=None
                     )
                 prediction = self.tokenizer.decode(output[0], skip_special_tokens=True)
                 final_answer = self.extract_final_answer(prediction)
