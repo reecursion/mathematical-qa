@@ -7,7 +7,6 @@ import re
 import argparse
 from tqdm import tqdm
 from typing import List, Dict, Tuple, Any, Optional
-# import matplotlib.pyplot as plt
 import os
 from huggingface_hub import login
 import time
@@ -95,7 +94,6 @@ class CustomizedFlanT5Inference:
         # Store original weights for both encoder and decoder
         self.original_state_dict = {
             k: v.clone() for k, v in self.model.state_dict().items()
-            if ('encoder' in k or 'decoder' in k) and 'attention' in k and 'relative_attention_bias' not in k
         }
         
         self.prompt = prompt
@@ -489,7 +487,8 @@ class CustomizedFlanT5Inference:
                         num_beams=4,
                         early_stopping=True,
                         output_attentions=True,
-                        return_dict_in_generate=True
+                        return_dict_in_generate=True,
+                        past_key_values=None
                     )
                 forward_end_time = time.time()
                 overall_inference_time = forward_end_time - forward_start_time
