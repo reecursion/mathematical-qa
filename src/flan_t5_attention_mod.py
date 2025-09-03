@@ -1,84 +1,12 @@
 import torch
 import pandas as pd
 import numpy as np
-from datasets import load_dataset
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 import re
 import argparse
 from tqdm import tqdm
 from typing import List, Dict, Tuple, Any, Optional
 import os
-from huggingface_hub import login
-
-
-class MathProcessor:
-    def __init__(self, dataset_name: str = "reecursion/mmiqc-subset", debug=True):
-        self.dataset_name = dataset_name
-        self.dataset = None
-        self.processed_dataset = None
-        self.debug = debug
-
-    def load_dataset(self) -> None:
-        self.dataset = load_dataset(self.dataset_name)
-        if self.debug:
-            print(f"Dataset '{self.dataset_name}' loaded with splits: {list(self.dataset.keys())}")
-
-    def _extract_clean_instruction(self, instruction: str) -> str:
-        prefix = 'Please solve the following problem and put your answer at the end with "The answer is: ".\n'
-        alt_prefix = 'Please solve the following problem and put your answer at the end with "The answer is: ". '
-        if instruction.startswith(prefix):
-            return instruction[len(prefix):].strip()
-        elif instruction.startswith(alt_prefix):
-            return instruction[len(alt_prefix):].strip()
-        return instruction
-
-    def _extract_final_answer(self, answer: str) -> str:
-        final_answer = ""
-        lines = answer.split('\n')
-        for line in reversed(lines):
-            if "The answer is:" in line:
-                final_answer = line.split("The answer is:")[-1].strip()
-                break
-        return final_answer
-
-    def process_dataset(self) -> Dict:
-        if not self.dataset:
-            self.load_dataset()
-        processed_splits = {}
-        for split_name, split_data in self.dataset.items():
-            df = pd.DataFrame(split_data)
-            df['clean_instruction'] = df['instruction'].apply(self._extract_clean_instruction)
-            df['final_answer'] = df['output'].apply(self._extract_final_answer)
-            processed_splits[split_name] = df
-            if self.debug:
-                print(f"Processed split '{split_name}' with {len(df)} examples.")
-        self.processed_dataset = processed_splits
-        return self.processed_dataset
-
-    def save_processed_dataset(self, output_dir: str) -> None:
-        import os
-        if self.processed_dataset is None:
-            self.process_dataset()
-        os.makedirs(output_dir, exist_ok=True)
-        for split_name, split_data in self.processed_dataset.items():
-            output_path = os.path.join(output_dir, f"{split_name}.csv")
-            split_data.to_csv(output_path, index=False)
-            print(f"Processed {split_name} split saved to {output_path}")
-
-    def get_sample(self, split: str = "train", n: int = 5) -> pd.DataFrame:
-        if self.processed_dataset is None:
-            self.process_dataset()
-        return self.processed_dataset[split].head(n)
-
-    def to_huggingface_dataset(self) -> Any:
-        from datasets import Dataset, DatasetDict
-        if self.processed_dataset is None:
-            self.process_dataset()
-        hf_datasets = {}
-        for split_name, split_data in self.processed_dataset.items():
-            hf_datasets[split_name] = Dataset.from_pandas(split_data)
-        return DatasetDict(hf_datasets)
-
 
 class CustomizedFlanT5Inference:
     def __init__(self, model_name="google/flan-t5-base", prompt="", device=None, debug=True):
@@ -395,14 +323,17 @@ class CustomizedFlanT5Inference:
         else:
             return min(0.7, max(0.4, words / (numbers * 10 + 1)))
 
-    def process_dataset(self, dataset_name="reecursion/mmiqc-subset", split="test"):
-        processor = MathProcessor(dataset_name, debug=self.debug)
-        processed_dataset = processor.process_dataset()
-        df = pd.DataFrame({
-            "question": processed_dataset[split]["clean_instruction"],
-            "ground_truth_full": processed_dataset[split]["output"],
-            "answer": processed_dataset[split]["final_answer"]
-        })
+    def process_dataset(self, dataset_name="deepmind_math"):
+        # Read from local CSV file
+        csv_path = f"processed_dataset/{dataset_name}/test.csv"
+        
+        # Read the local CSV file
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"Dataset file not found: {csv_path}")
+        
+        df = pd.read_csv(csv_path)
+        
+        # Just return the dataframe with all columns
         return df
 
     def prepare_prompt(self, question):
@@ -426,20 +357,17 @@ class CustomizedFlanT5Inference:
         
         for i in tqdm(range(0, total_examples, batch_size)):
             batch = df.iloc[i:i+batch_size]
-            prompts = [self.prepare_prompt(q) for q in batch["question"]]
+            prompts = [self.prepare_prompt(q) for q in batch["instruction_input"]]
             batch_results = []
             
             if self.debug:
                 print(f"\nProcessing batch {i//batch_size + 1}/{(total_examples+batch_size-1)//batch_size}")
             
             for j, (idx, row) in enumerate(batch.iterrows()):
-                question = row["question"]
+                question = row["instruction_input"]
                 if self.debug:
                     print(f"\nProcessing question {idx} ({j+1}/{len(batch)}):")
                     print(f"QUESTION: {question}")
-                
-                # Determine question type before modifying attention
-                question_type = "word_problem" if self.analyze_question_type(question) > 0.6 else "equation"
                 
                 # Use our unified attention modification function
                 self.modify_attention(
@@ -456,6 +384,7 @@ class CustomizedFlanT5Inference:
                         input_ids=single_input.input_ids,
                         attention_mask=single_input.attention_mask,
                         max_length=512,
+                        min_length=10,  # Ensure minimum output length
                         num_beams=4,
                         early_stopping=True,
                         past_key_values=None
@@ -464,20 +393,20 @@ class CustomizedFlanT5Inference:
                 final_answer = self.extract_final_answer(prediction)
                 
                 if self.debug:
-                    print(f"Question type: {question_type}")
                     print(f"Ground truth: {row['answer']}")
-                    print(f"Predicted: {final_answer}")
-                    print(f"Correct: {row['answer'].strip().lower() == final_answer.strip().lower()}")
+                    print(f"Full model response: {prediction}")
+                    print(f"Extracted answer: {final_answer}")
+                    print(f"Correct: {str(row['answer']).strip().lower() == str(final_answer).strip().lower()}")
                 
                 batch_results.append({
                     "idx": idx,
-                    "question": row["question"], 
+                    "question": row["question"],
+                    "instruction_input": row["instruction_input"], 
                     "prompt": prompts[j],
-                    "ground_truth_full": row["ground_truth_full"],
+                    "ground_truth_full": row["expected_output"],
                     "ground_truth": row["answer"],
                     "model_response": prediction,
-                    "predicted": final_answer,
-                    "question_type": question_type
+                    "predicted": final_answer
                 })
                 
                 # Reset weights for next question
@@ -487,27 +416,29 @@ class CustomizedFlanT5Inference:
         
         return pd.DataFrame(results)
 
-    def save_results(self, results_df, output_path="inference_results.csv"):
+    def save_results(self, results_df, output_path="inference_results.csv", dataset_name="deepmind_math", 
+                     model_name="google/flan-t5-base", model_part="both", num_scaling=1.0, op_scaling=1.0):
         results_df["correct"] = results_df.apply(
-            lambda x: x["ground_truth"].strip().lower() == x["predicted"].strip().lower(), axis=1
+            lambda x: str(x["ground_truth"]).strip().lower() == str(x["predicted"]).strip().lower(), axis=1
         )
+        
+        # Extract model name for directory structure
+        model_short = model_name.split("/")[-1] if "/" in model_name else model_name
+        
+        # Create structured output directory: results/dataset/model/model_part/
+        output_dir = f"results/{dataset_name}/{model_short}/{model_part}"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Create structured filename with scaling values
+        base_name = os.path.splitext(os.path.basename(output_path))[0]
+        structured_filename = f"{base_name}_num{num_scaling}_op{op_scaling}.csv"
+        output_path = os.path.join(output_dir, structured_filename)
+        
         results_df.to_csv(output_path, index=False)
         print(f"Results saved to {output_path}")
         accuracy = results_df["correct"].mean()
         print(f"Overall Accuracy: {accuracy:.4f}")
         
-        if "question_type" in results_df.columns:
-            eq_df = results_df[results_df["question_type"] == "equation"]
-            wp_df = results_df[results_df["question_type"] == "word_problem"]
-            
-            if not eq_df.empty:
-                eq_acc = eq_df["correct"].mean()
-                print(f"Equation Accuracy: {eq_acc:.4f} (n={len(eq_df)})")
-            
-            if not wp_df.empty:
-                wp_acc = wp_df["correct"].mean()
-                print(f"Word Problem Accuracy: {wp_acc:.4f} (n={len(wp_df)})")
-                
         if self.debug:
             # Print some analysis of the results
             correct_df = results_df[results_df["correct"] == True]
@@ -521,19 +452,20 @@ class CustomizedFlanT5Inference:
             if len(incorrect_df) > 0:
                 print("\nSample of incorrect predictions:")
                 for i, (_, row) in enumerate(incorrect_df.head(3).iterrows()):
-                    print(f"\nExample {i+1} (Type: {row['question_type']}):")
+                    print(f"\nExample {i+1}:")
                     print(f"Question: {row['prompt'][:100]}...")
                     print(f"Ground truth: {row['ground_truth']}")
                     print(f"Predicted: {row['predicted']}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run customized Flan-T5 inference on MMIQC dataset")
+    parser = argparse.ArgumentParser(description="Run customized Flan-T5 inference on datasets")
     parser.add_argument("--model", type=str, default="google/flan-t5-base", help="Model name or path")
-    parser.add_argument("--output", type=str, default="results/attention_experiments/inference_results.csv", help="Output CSV path")
+    parser.add_argument("--dataset", type=str, default="deepmind_math", help="Dataset name")
+    parser.add_argument("--output", type=str, default="inference_results.csv", help="Output CSV filename")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
-    parser.add_argument("--num_scaling", type=float, default=1.5, help="Number token scaling")
-    parser.add_argument("--op_scaling", type=float, default=2.0, help="Operator token scaling")
+    parser.add_argument("--num_scaling", type=float, default=1.0, help="Number token scaling")
+    parser.add_argument("--op_scaling", type=float, default=1.0, help="Operator token scaling")
     parser.add_argument("--model_part", type=str, choices=["encoder", "decoder", "both"], default="both", 
                         help="Which part of the model to apply attention modifications to")
     parser.add_argument("--debug", action="store_true", help="Enable debug/verbose output")
@@ -543,7 +475,7 @@ def main():
     torch.cuda.empty_cache()
 
     inference = CustomizedFlanT5Inference(model_name=args.model, debug=args.debug, prompt=args.modification)
-    df = inference.process_dataset()
+    df = inference.process_dataset(dataset_name=args.dataset)
     results = inference.run_inference(
         df,
         batch_size=args.batch_size,
@@ -551,7 +483,9 @@ def main():
         op_scaling=args.op_scaling,
         model_part=args.model_part
     )
-    inference.save_results(results, output_path=args.output)
+    inference.save_results(results, output_path=args.output, dataset_name=args.dataset, 
+                          model_name=args.model, model_part=args.model_part, 
+                          num_scaling=args.num_scaling, op_scaling=args.op_scaling)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ def process_algebra_data():
     # Input and output paths
     input_file = "/home/gganeshl/mathematical-qa/raw_datasets/deepmind_math/algebra_linear_1d.csv"
     output_dir = "/home/gganeshl/mathematical-qa/processed_dataset/deepmind_math"
-    output_file = os.path.join(output_dir, "algebra_linear_1d_processed.csv")
+    output_file = os.path.join(output_dir, "test.csv")
     
     print("Processing algebra_linear_1d data...")
     
@@ -40,14 +40,12 @@ def process_algebra_data():
             question = str(row['question']).strip()
             answer = str(row['answer']).strip()
             
-            # Remove "Solve" from the beginning of the question
+            # Remove "Solve" 
             if question.startswith('Solve '):
                 question = question[6:]  # Remove "Solve "
-            
-            # Create instruction_input with your specified format
-            instruction_input = f'Please solve this question and give output as "The answer is: ". {question}'
-            
-            # Create expected_output
+
+            instruction_input = f'Solve this question and give output as "The answer is: ". {question}'
+
             expected_output = f'The answer is: {answer}'
             
             # Create the processed row with your specified columns
