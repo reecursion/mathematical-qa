@@ -18409,7 +18409,7 @@ The value of x is 3.
 The answer is: 3",GSM_SV,Lori owns a carsharing company. There are three red cars and two white cars available to rent. Renting the white car costs $2 for every minute and the red car $3 for every minute. All cars were rented for x hours. Lori earned 2340 money. What is the value of unknown variable x?,3
 "Please solve the following problem and put your answer at the end with ""The answer is: "".
 
-Clive opens a box full of different colored balls.   The box contains x blue balls, 4 red balls, 3 times as many green balls as blue ones and twice as many yellow ones as red ones. There are 36 balls in the box Clive opens. What is the value of unknown variable x?
+Clive opens a box full of different colored balls.  The box contains x blue balls, 4 red balls, 3 times as many green balls as blue ones and twice as many yellow ones as red ones. There are 36 balls in the box Clive opens. What is the value of unknown variable x?
 
 ","To solve this problem, we need to determine the value of x, which represents the number of blue balls in the box.
 Let's break down the information given:
@@ -18430,7 +18430,7 @@ To solve for x, we divide both sides of the equation by 4:
 x = 24 / 4
 x = 6
 The value of x is 6.
-The answer is: 6",GSM_SV,"Clive opens a box full of different colored balls.   The box contains x blue balls, 4 red balls, 3 times as many green balls as blue ones and twice as many yellow ones as red ones. There are 36 balls in the box Clive opens. What is the value of unknown variable x?",6
+The answer is: 6",GSM_SV,"Clive opens a box full of different colored balls.  The box contains x blue balls, 4 red balls, 3 times as many green balls as blue ones and twice as many yellow ones as red ones. There are 36 balls in the box Clive opens. What is the value of unknown variable x?",6
 "Please solve the following problem and put your answer at the end with ""The answer is: "".
 
 A large container is being filled with water using two rectangular solids as described in the previous problem. The first solid has a volume of 18000 cm$^3$. The second solid is identical to the first one, but with a length that is halved. How much water in cubic centimeters can the container hold if it is filled with both solids?
