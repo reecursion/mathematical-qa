@@ -340,9 +340,17 @@ class CustomizedFlanT5Inference:
         return f"{self.prompt}{question}"
 
     def extract_final_answer(self, text):
-        match = re.search(r"The answer is:\s*(.*)", text)
-        if match:
-            return match.group(1).strip()
+        # # Try to find "The answer is:" format first
+        # match = re.search(r"The answer is:\s*(.*)", text)
+        # if match:
+        #     return match.group(1).strip()
+        
+        # If no "The answer is:" format, try to extract just a number
+        # Look for numbers at the end of the response
+        number_match = re.search(r'(-?\d+(?:\.\d+)?)\s*$', text.strip())
+        if number_match:
+            return number_match.group(1)
+        
         return ""
 
     def run_inference(self, df, batch_size=8, num_scaling=1.5, op_scaling=2.0, model_part="both"):
@@ -384,7 +392,6 @@ class CustomizedFlanT5Inference:
                         input_ids=single_input.input_ids,
                         attention_mask=single_input.attention_mask,
                         max_length=512,
-                        min_length=10,  # Ensure minimum output length
                         num_beams=4,
                         early_stopping=True,
                         past_key_values=None
@@ -401,9 +408,9 @@ class CustomizedFlanT5Inference:
                 batch_results.append({
                     "idx": idx,
                     "question": row["question"],
-                    "instruction_input": row["instruction_input"], 
+                    # "instruction_input": row["instruction_input"], 
                     "prompt": prompts[j],
-                    "ground_truth_full": row["expected_output"],
+                    # "ground_truth_full": row["expected_output"],
                     "ground_truth": row["answer"],
                     "model_response": prediction,
                     "predicted": final_answer
@@ -469,7 +476,7 @@ def main():
     parser.add_argument("--model_part", type=str, choices=["encoder", "decoder", "both"], default="both", 
                         help="Which part of the model to apply attention modifications to")
     parser.add_argument("--debug", action="store_true", help="Enable debug/verbose output")
-    parser.add_argument("--modification", type=str, default="Please solve the following problem and only output the answer at the end with \"The answer is: \". ", help="Modifications to the prompt")
+    parser.add_argument("--modification", type=str, default="Solve ", help="Modifications to the prompt")
     args = parser.parse_args()
 
     torch.cuda.empty_cache()

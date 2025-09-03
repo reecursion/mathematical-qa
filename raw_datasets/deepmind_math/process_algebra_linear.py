@@ -44,9 +44,9 @@ def process_algebra_data():
             if question.startswith('Solve '):
                 question = question[6:]  # Remove "Solve "
 
-            instruction_input = f'Solve this question and give output as "The answer is: ". {question}'
+            instruction_input = f'Solve {question}'
 
-            expected_output = f'The answer is: {answer}'
+            expected_output = f'{answer}'
             
             # Create the processed row with your specified columns
             processed_row = {
