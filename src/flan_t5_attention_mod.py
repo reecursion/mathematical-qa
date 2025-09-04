@@ -364,15 +364,15 @@ class CustomizedFlanT5Inference:
         total_examples = len(df)
         
         for i in tqdm(range(0, total_examples, batch_size)):
-            batch = df.iloc[i:i+batch_size]
-            prompts = [self.prepare_prompt(q) for q in batch["instruction_input"]]
+            batch = df.iloc[i:i+batch_size] 
+            prompts = [self.prepare_prompt(q) for q in batch["question"]]  
             batch_results = []
             
             if self.debug:
                 print(f"\nProcessing batch {i//batch_size + 1}/{(total_examples+batch_size-1)//batch_size}")
             
             for j, (idx, row) in enumerate(batch.iterrows()):
-                question = row["instruction_input"]
+                question = row["question"]
                 if self.debug:
                     print(f"\nProcessing question {idx} ({j+1}/{len(batch)}):")
                     print(f"QUESTION: {question}")
@@ -438,7 +438,8 @@ class CustomizedFlanT5Inference:
         
         # Create structured filename with scaling values
         base_name = os.path.splitext(os.path.basename(output_path))[0]
-        structured_filename = f"{base_name}_num{num_scaling}_op{op_scaling}.csv"
+        structured_filename = f"{base_name}.csv"
+        # structured_filename = f"{base_name}_num{num_scaling}_op{op_scaling}.csv"
         output_path = os.path.join(output_dir, structured_filename)
         
         results_df.to_csv(output_path, index=False)
