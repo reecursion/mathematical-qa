@@ -79,7 +79,7 @@ for folder in folders:
         
         # Fixed header row
         header_ops = " & ".join(f"{op:.1f}" for op in op_scalings)
-        latex_tables += f"Num \\backslash Op & {header_ops} \\\\\n\\hline\n"
+        latex_tables += f"Num $\\backslash$ Op & {header_ops} \\\\\n\\hline\n"
         
         for i, num in enumerate(num_scalings):
             row_cells = []
