@@ -40,17 +40,37 @@ for folder in folders:
                 results[folder]['mse'][i, j] = mse
 
 # Generate LaTeX tables
+from textwrap import dedent
+
 latex_tables = ""
 for folder in folders:
     for metric in ['accuracy', 'mse']:
-        latex_tables += f"\\begin{{table}}[h]\n\\centering\n\\caption{{{metric.capitalize()} for {folder}}}\n"
+        matrix = results[folder][metric]
+        baseline = matrix[1, 1]  # value at (1.0, 1.0)
+        
+        latex_tables += f"\\begin{{table}}[h]\n\\centering\n"
+        latex_tables += f"\\caption{{{metric.capitalize()} for {folder}}}\n"
         latex_tables += "\\begin{tabular}{c|ccc}\n"
         latex_tables += "Num \\textbackslash Op & 0.6 & 1.0 & 1.4 \\\\\n\\hline\n"
         
         for i, num in enumerate(num_scalings):
-            row = f"{num} & " + " & ".join([f"{results[folder][metric][i, j]:.4f}" for j in range(3)])
-            latex_tables += row + " \\\\\n"
+            row_cells = []
+            for j, op in enumerate(op_scalings):
+                value = matrix[i, j]
+                if metric == 'accuracy':
+                    color = "green!30" if value > baseline else ("red!30" if value < baseline else "")
+                else:  # mse
+                    color = "green!30" if value < baseline else ("red!30" if value > baseline else "")
+                
+                if color:
+                    cell = f"\\cellcolor{{{color}}}{value:.4f}"
+                else:
+                    cell = f"{value:.4f}"
+                row_cells.append(cell)
+            
+            latex_tables += f"{num} & " + " & ".join(row_cells) + " \\\\\n"
         
         latex_tables += "\\end{tabular}\n\\end{table}\n\n"
 
-print(latex_tables)
+print(dedent(latex_tables))
+
