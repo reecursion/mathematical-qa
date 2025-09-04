@@ -32,21 +32,11 @@ def process_and_save_dataset(combine=False):
     
     # Convert splits to DataFrames
     df_train = pd.DataFrame(dataset["train"])
-    df_test = pd.DataFrame(dataset["test"])
 
     # Clean text fields
     df_train = clean_dataframe(df_train)
-    df_test = clean_dataframe(df_test)
 
-    if combine:
-        # Add split column and combine
-        df_train["split"] = "train"
-        df_test["split"] = "test"
-        df_combined = pd.concat([df_train, df_test], ignore_index=True)
-        save_to_csv(df_combined, "math_dataset_combined.csv")
-    else:
-        save_to_csv(df_train, "math_train.csv")
-        save_to_csv(df_test, "math_test.csv")
+    save_to_csv(df_train, "math_train.csv")
 
 if __name__ == "__main__":
     process_and_save_dataset(combine=False)  # Set to True if you want a single CSV
